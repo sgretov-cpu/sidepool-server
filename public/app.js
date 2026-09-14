@@ -9,7 +9,9 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  function fmt(n) { return Math.round(n || 0).toLocaleString("en-US"); }
+  function fmt(n) {
+    return (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   function shortAddr(a) { return a ? a.slice(0, 6) + "…" + a.slice(-4) : ""; }
 
   // EIP-1193 personal_sign expects the message as a hex-encoded string —
@@ -332,7 +334,11 @@
   });
 
   function placeBet(side) {
-    if (!round || round.phase !== "open" || yourBet || (me.autoplay && me.autoplay.active)) return;
+    if (!round || round.phase !== "open" || (me.autoplay && me.autoplay.active)) return;
+    if (yourBet && yourBet.side !== side) {
+      showToast("You're already backing Side " + yourBet.side + " this round.");
+      return;
+    }
     var amount = Math.floor(Number(dom.stakeInput.value));
     if (!amount || amount < 1) return;
     send({ type: "placeBet", side: side, amount: amount });
@@ -366,7 +372,7 @@
     if (document.activeElement !== dom.nicknameInput) {
       dom.nicknameInput.value = me.name && me.name !== shortAddr(me.address) ? me.name : "";
     }
-    dom.balance.textContent = fmt(me.balance) + " cr";
+    dom.balance.textContent = fmt(me.balance) + " USDT";
   }
 
   function renderAutoplayControls() {
@@ -376,7 +382,7 @@
     dom.apToggle.classList.toggle("stop", !!active);
     dom.autoplayStatus.hidden = !active;
     if (active) {
-      dom.autoplayStatus.textContent = "Autoplay backing Side " + me.autoplay.side + " for " + fmt(me.autoplay.stake) + " cr — " + me.autoplay.roundsLeft + " round(s) left.";
+      dom.autoplayStatus.textContent = "Autoplay backing Side " + me.autoplay.side + " for " + fmt(me.autoplay.stake) + " USDT — " + me.autoplay.roundsLeft + " round(s) left.";
     }
   }
 
@@ -384,18 +390,18 @@
     dom.resultBanner.hidden = false;
     if (result.voided) {
       dom.resultBanner.className = "result-banner neutral";
-      dom.resultBanner.innerHTML = "Round voided — no stakes landed on the drawn side, stakes refunded.<span class='seed'>seed " + escapeHtml(result.seed) + "</span>";
+      dom.resultBanner.innerHTML = "Round voided — the pools tied (or nobody bet), so there's no majority side. Stakes refunded.";
       return;
     }
     var won = yours && yours.side === result.winner;
     var lost = yours && yours.side !== result.winner;
     dom.resultBanner.className = "result-banner " + (won ? "win" : lost ? "lose" : "neutral");
     var headline = "Side " + result.winner + " wins the pool";
-    var sub;
-    if (won) sub = "You backed the winning side — paid out " + fmt(yours.payout) + " cr at " + result.mult.toFixed(2) + "x.";
-    else if (lost) sub = "You backed Side " + yours.side + " — that stake stays in the pool.";
-    else sub = "You sat this round out.";
-    dom.resultBanner.innerHTML = headline + "<br>" + sub + "<span class='seed'>seed " + escapeHtml(result.seed) + "</span>";
+    var sub = "Side " + result.winner + " held the bigger pool when betting locked.";
+    if (won) sub += " You backed it — paid out " + fmt(yours.payout) + " USDT at " + result.mult.toFixed(2) + "x.";
+    else if (lost) sub += " You backed Side " + yours.side + " — that stake stays in the pool.";
+    else sub += " You sat this round out.";
+    dom.resultBanner.innerHTML = headline + "<br>" + sub;
   }
 
   function renderAll() {
@@ -416,26 +422,33 @@
     dom.splitBar.children[0].textContent = total > 0 ? Math.round(pctA) + "%" : "—";
     dom.splitBar.children[1].textContent = total > 0 ? Math.round(pctB) + "%" : "—";
 
-    dom.poolA.textContent = fmt(round.poolA) + " cr";
-    dom.poolB.textContent = fmt(round.poolB) + " cr";
+    dom.poolA.textContent = fmt(round.poolA) + " USDT";
+    dom.poolB.textContent = fmt(round.poolB) + " USDT";
     dom.playersA.textContent = round.playersA + (round.playersA === 1 ? " backer" : " backers");
     dom.playersB.textContent = round.playersB + (round.playersB === 1 ? " backer" : " backers");
     dom.multA.textContent = round.poolA > 0 ? "~" + (total / round.poolA).toFixed(2) + "x if A wins" : "First backer sets the pool";
     dom.multB.textContent = round.poolB > 0 ? "~" + (total / round.poolB).toFixed(2) + "x if B wins" : "First backer sets the pool";
 
-    var canBet = round.phase === "open" && !yourBet && !(me.autoplay && me.autoplay.active);
-    dom.backA.disabled = !canBet;
-    dom.backB.disabled = !canBet;
-    dom.stakeRow.style.opacity = canBet ? "1" : ".55";
-    dom.stakeInput.disabled = !canBet;
-    dom.maxStakeBtn.disabled = !canBet;
+    // You can wager more than once per round, but every wager has to stay
+    // on the side you first picked — so each button is enabled unless the
+    // OTHER side is the one you already backed.
+    var open = round.phase === "open" && !(me.autoplay && me.autoplay.active);
+    var canBetA = open && (!yourBet || yourBet.side === "A");
+    var canBetB = open && (!yourBet || yourBet.side === "B");
+    dom.backA.disabled = !canBetA;
+    dom.backB.disabled = !canBetB;
+    dom.backA.textContent = yourBet && yourBet.side === "A" ? "Add to Side A" : "Back Side A";
+    dom.backB.textContent = yourBet && yourBet.side === "B" ? "Add to Side B" : "Back Side B";
+    dom.stakeRow.style.opacity = open ? "1" : ".55";
+    dom.stakeInput.disabled = !open;
+    dom.maxStakeBtn.disabled = !open;
 
     dom.sideA.classList.toggle("picked", !!yourBet && yourBet.side === "A");
     dom.sideB.classList.toggle("picked", !!yourBet && yourBet.side === "B");
     dom.yourBetA.hidden = !(yourBet && yourBet.side === "A");
     dom.yourBetB.hidden = !(yourBet && yourBet.side === "B");
-    if (yourBet && yourBet.side === "A") dom.yourBetA.textContent = "You: " + fmt(yourBet.amount) + " cr";
-    if (yourBet && yourBet.side === "B") dom.yourBetB.textContent = "You: " + fmt(yourBet.amount) + " cr";
+    if (yourBet && yourBet.side === "A") dom.yourBetA.textContent = "You: " + fmt(yourBet.amount) + " USDT";
+    if (yourBet && yourBet.side === "B") dom.yourBetB.textContent = "You: " + fmt(yourBet.amount) + " USDT";
 
     renderHistory();
   }
@@ -446,9 +459,9 @@
       return;
     }
     var rows = history.slice(0, 12).map(function (h) {
-      var youCell = h.yours ? (fmt(h.yours.amount) + " cr on " + h.yours.side) : "—";
+      var youCell = h.yours ? (fmt(h.yours.amount) + " USDT on " + h.yours.side) : "—";
       var youClass = h.yours ? (h.yours.side === "A" ? "you-a" : "you-b") : "";
-      var payoutCell = h.yours ? (h.yours.payout > 0 ? "+" + fmt(h.yours.payout) + " cr" : "0 cr") : "—";
+      var payoutCell = h.yours ? (h.yours.payout > 0 ? "+" + fmt(h.yours.payout) + " USDT" : "0.00 USDT") : "—";
       var payoutClass = h.yours ? (h.yours.payout > 0 ? "pnl-pos" : (h.winner !== "void" ? "pnl-neg" : "")) : "";
       var winnerLabel = h.winner === "void" ? "Void" : "Side " + h.winner;
       return "<tr>" +

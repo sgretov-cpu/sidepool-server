@@ -28,9 +28,9 @@
       </div>
       <div>
         <div class="label">Balance</div>
-        <div class="amount mono" id="balanceDisplay">0 cr</div>
+        <div class="amount mono" id="balanceDisplay">0.00 USDT</div>
       </div>
-      <button id="topupBtn" class="primary" type="button">+ Top up 500</button>
+      <button id="topupBtn" class="primary" type="button">+ Top up 500 USDT</button>
       <button id="inviteBtn" type="button">Copy invite link</button>
       <button id="resetBtn" type="button" title="Reset your balance">Reset</button>
       <button id="disconnectBtn" type="button" title="Disconnect this wallet">Disconnect</button>
@@ -38,7 +38,7 @@
   </div>
 
   <div class="notice">
-    <strong>Prototype, not a wagering product.</strong> Every credit is virtual, free to top up, and worth nothing outside this page. It demonstrates the round &rarr; split-pool &rarr; settlement mechanic behind a "Versus" style feature: everyone here shares the same live rounds — two sides collect stakes, one side wins, and the pool splits among winners in proportion to their stake, no fixed odds.
+    <strong>Prototype, not a wagering product.</strong> Every "USDT" shown here is virtual — free to top up and worth nothing outside this page; no real stablecoin ever moves. Winner is decided by momentum: whichever side holds the larger pool when betting locks wins, and splits the total pool among its backers in proportion to their stake — no fixed odds, no house edge. A tied or empty round voids and refunds everyone. You can back a side more than once per round, adding to your stake, but you can't switch sides mid-round.
   </div>
 
   <div id="toast" class="toast hidden"></div>
@@ -89,7 +89,7 @@
             <span class="label">Side A</span>
             <span class="players mono" id="playersA">0 backers</span>
           </div>
-          <div class="pool mono" id="poolA">0 cr</div>
+          <div class="pool mono" id="poolA">0.00 USDT</div>
           <div class="mult" id="multA">First backer sets the pool</div>
           <div class="your-bet" id="yourBetA" hidden></div>
           <button class="back" id="backA" type="button">Back Side A</button>
@@ -99,7 +99,7 @@
             <span class="label">Side B</span>
             <span class="players mono" id="playersB">0 backers</span>
           </div>
-          <div class="pool mono" id="poolB">0 cr</div>
+          <div class="pool mono" id="poolB">0.00 USDT</div>
           <div class="mult" id="multB">First backer sets the pool</div>
           <div class="your-bet" id="yourBetB" hidden></div>
           <button class="back" id="backB" type="button">Back Side B</button>

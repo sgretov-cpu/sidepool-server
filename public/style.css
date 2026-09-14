@@ -202,7 +202,6 @@ button, input{ font-family:inherit; }
 .result-banner.win{ background:var(--good-soft); color:var(--good); }
 .result-banner.lose{ background:var(--bad-soft); color:var(--bad); }
 .result-banner.neutral{ background:var(--surface-2); color:var(--text-dim); }
-.result-banner .seed{ font-size:.72rem; color:var(--text-faint); }
 
 .autoplay-status{ font-size:.82rem; color:var(--text-dim); background:var(--surface-2); border-radius:9px; padding:9px 12px; }
 
