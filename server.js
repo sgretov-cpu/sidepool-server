@@ -13,7 +13,8 @@ const http = require("http");
 const crypto = require("crypto");
 const express = require("express");
 const { WebSocketServer } = require("ws");
-const { verifyMessage } = require("ethers");
+const { verifyMessage, Wallet } = require("ethers");
+const QRCode = require("qrcode");
 
 // ---------------------------------------------------------------------
 // Config
@@ -38,6 +39,11 @@ const KEEP_ROUND_DETAIL = 5; // how many past rounds' bet breakdowns we retain i
 const NONCE_TTL_MS = 5 * 60 * 1000;
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const ADDRESS_RE = /^0x[0-9a-f]{40}$/;
+
+// Lets the connect screen demo a QR-code / mobile-wallet-style flow with no
+// real wallet on the other end. Off switch for whenever this stops being a
+// prototype: set SIMULATE_WALLET_ENABLED=false in the environment.
+const SIMULATE_WALLET_ENABLED = process.env.SIMULATE_WALLET_ENABLED !== "false";
 
 // ---------------------------------------------------------------------
 // State
@@ -373,6 +379,39 @@ app.post("/api/verify", (req, res) => {
   const token = crypto.randomBytes(24).toString("hex");
   sessions.set(token, { address, expiresAt: Date.now() + SESSION_TTL_MS });
   res.json({ token, player: publicPlayer(p) });
+});
+
+// --- Simulated QR / mobile-wallet connect (demo only, no real wallet) --
+// Mirrors what a WalletConnect-style QR flow feels like without pulling in
+// the real SDK (which needs a paid-for project ID). A throwaway wallet is
+// generated and signs its own sign-in message server-side, standing in for
+// "the phone that scanned the code" — the browser then runs that address +
+// signature through the exact same /api/verify path a real wallet would.
+// Nothing here is a real wallet, a real relay, or a real signature from the
+// visitor; it just proves the rest of the pipeline end to end.
+app.get("/api/simulate/start", async (req, res) => {
+  if (!SIMULATE_WALLET_ENABLED) {
+    return res.status(404).json({ error: "Simulated connect is disabled on this deployment." });
+  }
+  try {
+    const wallet = Wallet.createRandom();
+    const address = wallet.address.toLowerCase();
+    const nonce = crypto.randomBytes(16).toString("hex");
+    const message = siweMessage(address, nonce, req.get("host"));
+    nonces.set(address, { nonce, message, expiresAt: Date.now() + NONCE_TTL_MS });
+    const signature = await wallet.signMessage(message);
+
+    // Cosmetic only — shaped like a real WalletConnect URI so the QR code
+    // looks right, but nothing is listening on the other end of it.
+    const topic = crypto.randomBytes(32).toString("hex");
+    const symKey = crypto.randomBytes(32).toString("hex");
+    const wcUri = `wc:${topic}@2?relay-protocol=irn&symKey=${symKey}`;
+    const qrDataUrl = await QRCode.toDataURL(wcUri, { margin: 1, width: 280 });
+
+    res.json({ address, signature, wcUri, qrDataUrl });
+  } catch (e) {
+    res.status(500).json({ error: "Could not prepare a simulated connection." });
+  }
 });
 
 const server = http.createServer(app);

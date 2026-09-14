@@ -29,6 +29,8 @@
     topupBtn: el("topupBtn"), inviteBtn: el("inviteBtn"), resetBtn: el("resetBtn"), disconnectBtn: el("disconnectBtn"),
     toast: el("toast"),
     connectCard: el("connectCard"), connectBtn: el("connectBtn"), connectHint: el("connectHint"),
+    qrConnectBtn: el("qrConnectBtn"), qrPanel: el("qrPanel"), qrImage: el("qrImage"),
+    qrStatus: el("qrStatus"), qrUri: el("qrUri"), qrSimulateBtn: el("qrSimulateBtn"), qrCancelBtn: el("qrCancelBtn"),
     game: el("game"),
     roundNum: el("roundNum"), phasePill: el("phasePill"), countdownText: el("countdownText"),
     timebar: el("timebar"), splitBar: el("splitBar"),
@@ -174,6 +176,9 @@
     dom.connectCard.hidden = false;
     dom.connectBtn.disabled = false;
     dom.connectBtn.textContent = "Connect Wallet";
+    pendingSimulation = null;
+    dom.qrPanel.hidden = true;
+    dom.connectCard.querySelector(".join-row").hidden = false;
     if (hint) {
       dom.connectHint.textContent = hint;
       dom.connectHint.hidden = false;
@@ -183,6 +188,26 @@
   }
 
   dom.connectBtn.addEventListener("click", function () { connectWallet(); });
+
+  // Shared by the real wallet flow and the simulated QR flow — both end the
+  // same way: an address + a signature over the server's challenge message,
+  // handed to /api/verify.
+  function verifyAndConnect(address, signature) {
+    return fetch("/api/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: address, signature: signature })
+    })
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.data.error || "Signature verification failed.");
+        session = { token: res.data.token, address: address };
+        persistSession();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          send({ type: "hello", token: session.token });
+        }
+      });
+  }
 
   function connectWallet() {
     if (!window.ethereum) {
@@ -207,27 +232,61 @@
               params: [hexEncode(res.data.message), address]
             });
           })
-          .then(function (signature) {
-            return fetch("/api/verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ address: address, signature: signature })
-            }).then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); });
-          })
-          .then(function (res) {
-            if (!res.ok) throw new Error(res.data.error || "Signature verification failed.");
-            session = { token: res.data.token, address: address };
-            persistSession();
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              send({ type: "hello", token: session.token });
-            }
-          });
+          .then(function (signature) { return verifyAndConnect(address, signature); });
       })
       .catch(function (err) {
         var msg = err && err.code === 4001 ? "Connection request was rejected." : (err && err.message) || "Wallet connection failed.";
         showConnectCard(msg);
       });
   }
+
+  // ---------------------------------------------------------------
+  // Simulated QR / mobile-wallet connect (demo only)
+  // ---------------------------------------------------------------
+  var pendingSimulation = null;
+
+  dom.qrConnectBtn.addEventListener("click", function () {
+    dom.qrConnectBtn.disabled = true;
+    dom.qrConnectBtn.textContent = "Generating code…";
+    fetch("/api/simulate/start")
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.data.error || "Could not start the simulated connect.");
+        pendingSimulation = res.data;
+        dom.qrImage.src = res.data.qrDataUrl;
+        dom.qrUri.textContent = res.data.wcUri;
+        dom.qrStatus.textContent = "Waiting for a mobile wallet to scan this code…";
+        dom.connectCard.querySelector(".join-row").hidden = true;
+        dom.qrPanel.hidden = false;
+      })
+      .catch(function (err) {
+        showConnectCard((err && err.message) || "Could not start the simulated connect.");
+      })
+      .finally(function () {
+        dom.qrConnectBtn.disabled = false;
+        dom.qrConnectBtn.textContent = "Connect via QR code";
+      });
+  });
+
+  dom.qrSimulateBtn.addEventListener("click", function () {
+    if (!pendingSimulation) return;
+    dom.qrSimulateBtn.disabled = true;
+    dom.qrStatus.textContent = "Scan received — verifying signature…";
+    verifyAndConnect(pendingSimulation.address, pendingSimulation.signature)
+      .catch(function (err) {
+        showConnectCard((err && err.message) || "Simulated connect failed.");
+      })
+      .finally(function () {
+        pendingSimulation = null;
+        dom.qrSimulateBtn.disabled = false;
+      });
+  });
+
+  dom.qrCancelBtn.addEventListener("click", function () {
+    pendingSimulation = null;
+    dom.qrPanel.hidden = true;
+    dom.connectCard.querySelector(".join-row").hidden = false;
+  });
 
   if (window.ethereum && window.ethereum.on) {
     window.ethereum.on("accountsChanged", function (accounts) {
