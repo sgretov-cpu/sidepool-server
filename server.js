@@ -2,9 +2,13 @@
 
 /**
  * Sidepool — public multiplayer prototype of a pooled binary ("Versus")
- * betting round. Virtual credits only; no real money or blockchain
- * involved. One authoritative game loop lives on this server; every
- * connected browser is a thin client synced over WebSocket.
+ * betting round. Balances are shown as virtual USDT for realism, but
+ * every unit is fake, free to top up, and moves no real funds — no real
+ * crypto or blockchain is involved yet. Winner is decided by momentum:
+ * whichever side holds the larger pool when betting locks wins and
+ * splits the total pool proportionally; a tied or empty round voids and
+ * refunds everyone. One authoritative game loop lives on this server;
+ * every connected browser is a thin client synced over WebSocket.
  */
 
 const path = require("path");
@@ -126,8 +130,14 @@ function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function fairSide() {
-  return crypto.randomInt(0, 2) === 0 ? "A" : "B";
+// Momentum/majority model: whichever side holds the larger pool when
+// betting locks is declared the winner. A tie (or an empty round) has no
+// majority, so it voids and every stake is refunded rather than assigning
+// a winner. This intentionally replaces a random draw — the outcome is a
+// function of where the crowd's money actually went, not chance.
+function decideWinner(poolA, poolB) {
+  if (poolA === poolB) return null;
+  return poolA > poolB ? "A" : "B";
 }
 
 function publicPlayer(p) {
@@ -154,7 +164,7 @@ function siweMessage(address, nonce, host) {
   return (
     `Sidepool wants you to sign in with your Ethereum account:\n${address}\n\n` +
     `This signature only proves you control this wallet. It is free, sends no ` +
-    `transaction, and moves no funds — Sidepool plays with virtual credits only.\n\n` +
+    `transaction, and moves no funds — Sidepool plays with virtual USDT only.\n\n` +
     `URI: ${host}\n` +
     `Version: 1\n` +
     `Nonce: ${nonce}\n` +
@@ -183,18 +193,26 @@ function clearBotTimers() {
 }
 
 function addBet(round_, playerId, side, amount, meta = {}) {
-  round_.bets.set(playerId, {
-    side,
-    amount,
-    name: meta.name || "Player",
-    isBot: !!meta.isBot,
-  });
+  // Players can wager more than once per round, as long as every wager in
+  // a round stays on the side they first picked — repeat wagers add to
+  // their existing stake rather than opening a second position.
+  const existing = round_.bets.get(playerId);
+  if (existing) {
+    existing.amount += amount;
+  } else {
+    round_.bets.set(playerId, {
+      side,
+      amount,
+      name: meta.name || "Player",
+      isBot: !!meta.isBot,
+    });
+  }
   if (side === "A") {
     round_.poolA += amount;
-    round_.playersA += 1;
+    if (!existing) round_.playersA += 1;
   } else {
     round_.poolB += amount;
-    round_.playersB += 1;
+    if (!existing) round_.playersB += 1;
   }
 }
 
@@ -262,11 +280,10 @@ function newRound() {
 
 function settleRound() {
   const total = round.poolA + round.poolB;
-  const winner = fairSide();
-  const winnerPool = winner === "A" ? round.poolA : round.poolB;
-  const voided = winnerPool === 0 && total > 0;
-  const mult = winnerPool > 0 ? total / winnerPool : 0;
-  const seed = "0x" + crypto.randomBytes(4).toString("hex");
+  const winner = decideWinner(round.poolA, round.poolB);
+  const winnerPool = winner === "A" ? round.poolA : winner === "B" ? round.poolB : 0;
+  const voided = winner === null;
+  const mult = !voided && winnerPool > 0 ? total / winnerPool : 0;
 
   const perPlayer = new Map(); // playerId -> {side, amount, payout}
   for (const [pid, bet] of round.bets.entries()) {
@@ -284,7 +301,7 @@ function settleRound() {
     perPlayer.set(pid, { side: bet.side, amount: bet.amount, payout });
   }
 
-  round.settled = { winner, total, winnerPool, mult, voided, seed };
+  round.settled = { winner, total, winnerPool, mult, voided };
 
   history.unshift({
     round: round.id,
@@ -492,7 +509,6 @@ function broadcastSettlement(perPlayer) {
         winner: s.winner,
         mult: s.mult,
         voided: s.voided,
-        seed: s.seed,
         poolA: round.poolA,
         poolB: round.poolB,
       },
@@ -579,13 +595,18 @@ function handleMessage(ws, msg) {
       const p = pid && players.get(pid);
       if (!p) return send(ws, { type: "error", message: "Not connected yet — try again." });
       if (!round || round.phase !== "open") return send(ws, { type: "error", message: "This round is no longer open for bets." });
-      if (round.bets.has(pid)) return send(ws, { type: "error", message: "You already backed a side this round." });
       const side = msg.side === "B" ? "B" : msg.side === "A" ? "A" : null;
       if (!side) return send(ws, { type: "error", message: "Pick Side A or Side B." });
+      // Multiple wagers per round are allowed, but every wager in a round
+      // has to stay on the side you first picked — no switching mid-round.
+      const existingBet = round.bets.get(pid);
+      if (existingBet && existingBet.side !== side) {
+        return send(ws, { type: "error", message: `You're already backing Side ${existingBet.side} this round — add more there, or wait for the next round to switch.` });
+      }
       let amount = Math.floor(Number(msg.amount));
-      if (!Number.isFinite(amount) || amount < 1) return send(ws, { type: "error", message: "Enter a stake of at least 1 credit." });
+      if (!Number.isFinite(amount) || amount < 1) return send(ws, { type: "error", message: "Enter a stake of at least 1 USDT." });
       if (amount > p.balance) amount = p.balance;
-      if (amount < 1) return send(ws, { type: "error", message: "You're out of credits — top up first." });
+      if (amount < 1) return send(ws, { type: "error", message: "You're out of USDT — top up first." });
       p.balance -= amount;
       addBet(round, pid, side, amount, { name: p.name });
       markDirty();

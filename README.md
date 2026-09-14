@@ -2,10 +2,16 @@
 
 A public, multi-user recreation of the "Versus" pooled binary-betting
 mechanic: everyone who has the page open shares the same live round.
-Players pick Side A or Side B, stakes pool up, and when the round locks
-the whole pool splits among the winning side proportional to stake — no
-fixed odds. Credits are entirely virtual (free top-ups) — **there is no
-real money, payment processing, or crypto in this build.**
+Players pick Side A or Side B, stakes pool up (you can add to your stake
+more than once per round, as long as you stay on the side you first
+picked), and when the round locks the whole pool splits among the
+winning side proportional to stake — no fixed odds. The winner is
+decided by **momentum**: whichever side is holding the larger total pool
+the instant betting locks wins; a tie (or a round nobody bet in) has no
+majority and voids, refunding every stake. Balances are shown as
+"USDT" for realism, but every unit is entirely virtual (free top-ups) —
+**there is no real money, payment processing, or crypto in this
+build.**
 
 This is a real Node.js app (Express + WebSocket), not a static page — it
 needs to run on a server somewhere so a shared link works for anyone. It
@@ -216,5 +222,13 @@ operator, KYC/age verification, on-chain (not just signed-message)
 settlement, audited payout logic, and jurisdiction gating enforced at
 connect time (not just stated in a footer), none of which this
 prototype has. Worth looping legal review in on the settlement
-mechanics themselves (the parimutuel split + the random winner draw)
-too, not just the payment rail and the login flow.
+mechanics themselves — the parimutuel split *and* the momentum-based
+winner rule (whichever side holds the bigger pool at lock wins) — too,
+not just the payment rail and the login flow. A momentum-decided
+outcome is a materially different thing to get legal sign-off on than a
+random draw: it's not an independent, verifiable event, and depending on
+jurisdiction that distinction can matter a lot for how this gets
+classified. If a real stablecoin (USDT or otherwise) gets wired in later,
+that's its own separate review — on-chain transfers, custody, and
+redemption all need clearing on top of the settlement-logic review
+above.
